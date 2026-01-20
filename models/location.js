@@ -72,4 +72,4 @@ userSchema.set('toJSON', {
 
 const Location = mongoose.model('Location', locationSchema);
 
-module.exports = User;
+module.exports = Location;
