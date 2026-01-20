@@ -5,16 +5,17 @@ const bcrypt = require('bcrypt');
 const User = require('../models/user');
 const jwt = require('jsonwebtoken');
 
-TESTTT BRANCH
 
-const saltRounds = 12;  // Salting is where a random string of characters is added to the password before hashing it.  
+const saltRounds = 12;  // Random string of characters is added to the password before hashing it.  
+
+//SIGN UP
 
 router.post('/sign-up', async (req, res) => {
   try {
     const userInDatabase = await User.findOne({ username: req.body.username });
     
     if (userInDatabase) {
-      return res.status(409).json({err: 'Username already taken.'});
+      return res.status(409).json({err: 'Username already taken, Try again!.'});
     }
     
     const user = await User.create({
@@ -22,13 +23,10 @@ router.post('/sign-up', async (req, res) => {
       hashedPassword: bcrypt.hashSync(req.body.password, saltRounds)
     });
 
-    // Construct the payload
     const payload = { username: user.username, _id: user._id };
 
-    // Create the token, attaching the payload
     const token = jwt.sign({ payload }, process.env.JWT_SECRET);
 
-    // Send the token instead of the user
     res.status(201).json({ token });
   } catch (err) {
     res.status(400).json({ err: err.message });
@@ -52,13 +50,10 @@ router.post('/sign-in', async (req, res) => {
       return res.status(401).json({ err: 'Invalid credentials.' });
     }
 
-    // Construct the payload
     const payload = { username: user.username, _id: user._id };
 
-    // Create the token, attaching the payload
     const token = jwt.sign({ payload }, process.env.JWT_SECRET);
 
-    // Send the token instead of the message
     res.status(200).json({ token });
   } catch (err) {
     res.status(500).json({ err: err.message });
