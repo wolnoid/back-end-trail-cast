@@ -26,9 +26,7 @@ router.get('/places', async (req, res) => {
       return res.status(400).json({ err: "Search query is required" });
     };
 
-    const response = await fetch(
-      `https://api.geoapify.com/v1/geocode/search?text=${search}&apiKey=${API_KEY}`
-    );
+    const response = await fetch(`https://api.geoapify.com/v1/geocode/search?text=${search}&apiKey=${API_KEY}`);
     const data = await response.json();
 
     if (!data.features?.length) {
@@ -36,7 +34,7 @@ router.get('/places', async (req, res) => {
     }
 
     const places = data.features.map(feature => ({
-      name: feature.properties.name,
+      name: feature.properties.formatted,
       place_id: feature.properties.place_id
     }));
 
