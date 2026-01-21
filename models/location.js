@@ -30,11 +30,11 @@ const locationSchema = mongoose.Schema(
   },
   day: {
     type: String,
-    required: true,
+    // required: true,
   },
   temperature: {
     type: Number,
-    required: true,
+    // required: true,
   },
   temperatureUnit: {
     type: String,
@@ -63,12 +63,6 @@ const locationSchema = mongoose.Schema(
   },
   {timestamps:true}
 );
-
-userSchema.set('toJSON', {
-  transform: (document, returnedObject) => {
-    delete returnedObject.hashedPassword;
-  }
-});
 
 const Location = mongoose.model('Location', locationSchema);
 
