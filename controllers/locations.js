@@ -83,7 +83,7 @@ router.get('/place/:placeId/weather', async (req, res) => {
   }
 });
 
-// posting managing orders
+// posting locations managing orders
 router.post("/", verifyToken, async (req, res) => {
   try {
     // create new location order based on the last one 
@@ -218,6 +218,66 @@ router.delete("/:locationId/comments/:commentId", verifyToken, async (req, res) 
   }
 });
 
+//post logs
+
+router.post("/:locationId/logs", verifyToken, async (req, res) => {
+  try {
+    req.body.author = req.user._id;
+    const location = await Location.findById(req.params.locationId);
+    location.logs.push(req.body);
+    await location.save();
+
+    const newLog = location.logs[location.logs.length - 1];
+
+    newLog._doc.author = req.user;
+
+    res.status(201).json(newLog);
+  } catch (err) {
+    res.status(500).json({ err: err.message });
+  }
+});
+
+// update comments
+
+router.put("/:locationId/logs/:logId", verifyToken, async (req, res) => {
+  try {
+    const location= await Location.findById(req.params.locationId);
+    const log = location.comments.id(req.params.logId);
+
+    // ensures the current user is the author of the comment
+    if (location.author.toString() !== req.user._id) {
+      return res
+        .status(403)
+        .json({ message: "You are not authorized to change this activity, you're not the author" });
+    }
+    log.text = req.body.text;
+    await location.save();
+    res.status(200).json({ message: "Activity updated successfully" });
+  } catch (err) {
+    res.status(500).json({ err: err.message });
+  }
+});
+
+//delete comments
+
+router.delete("/:locationId/logs/:logId", verifyToken, async (req, res) => {
+  try {
+    const location = await Location.findById(req.params.locationId);
+    const log = location.logs.id(req.params.logId);
+
+    if (log.author.toString() !== req.user._id) {
+      return res
+        .status(403)
+        .json({ message: "You are not authorized to delete this activity" });
+    }
+
+    location.logs.remove({ _id: req.params.logId });
+    await location.save();
+    res.status(200).json({ message: "Activity deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ err: err.message });
+  }
+});
 
 module.exports = router;
 

@@ -52,7 +52,7 @@ const locationSchema = mongoose.Schema(
     ref: 'User'
   },
   comments: [commentSchema],
-  log: [logSchema],
+  logs: [logSchema],
   },
   {timestamps:true}
 );
