@@ -3,12 +3,12 @@ const verifyToken = require("../middleware/verify-token.js");
 const Location = require("../models/location.js");
 const router = express.Router();
 
-router.get("/", verifyToken, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const locations = await Location.find({})
       .populate("author")
       .sort({ order: -1 });// descending  order// match with order that we want to show/ allow drag
-    res.status(200).json(hoots);
+    res.status(200).json(locations);
   } catch (err) {
     res.status(500).json({ err: err.message });
   }
@@ -61,9 +61,7 @@ router.get("/:locationId", verifyToken, async (req, res) => {
   }
 });
 
-
 //update
-
 router.put("/:locationId", verifyToken, async (req, res) => {
   try {
     const location = await Location.findById(req.params.locationId);
