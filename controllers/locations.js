@@ -235,14 +235,13 @@ router.post("/:locationId/logs", verifyToken, async (req, res) => {
   }
 });
 
-// update comments
+// update 
 
 router.put("/:locationId/logs/:logId", verifyToken, async (req, res) => {
   try {
     const location= await Location.findById(req.params.locationId);
     const log = location.comments.id(req.params.logId);
 
-    // ensures the current user is the author of the comment
     if (location.author.toString() !== req.user._id) {
       return res
         .status(403)
@@ -256,7 +255,7 @@ router.put("/:locationId/logs/:logId", verifyToken, async (req, res) => {
   }
 });
 
-//delete comments
+//delete 
 
 router.delete("/:locationId/logs/:logId", verifyToken, async (req, res) => {
   try {
