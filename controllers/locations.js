@@ -37,6 +37,8 @@ router.get("/places", async (req, res) => {
       return res.status(response.status).json({ err: "Geoapify request failed" });
     }
 
+    const response = await fetch(`https://api.geoapify.com/v1/geocode/search?text=${search}&filter=countrycode:us&apiKey=${API_KEY}`);
+
     const data = await response.json();
 
     if (!data.features?.length) {
