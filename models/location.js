@@ -41,21 +41,34 @@ const locationSchema = mongoose.Schema(
   },
   name: {
     type: String,
+    trim: true,
+    required: true,
+  },
+  longitude: {
+    type: Number,
+    required: true,
+  },
+  latitude: {
+    type: Number,
     required: true,
   },
   description:{
     type:String,
-    required:true,
+    trim: true,
+    default: '',
   },
   author:{
     type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User'
+    ref: 'User',
+    required: true,
   },
   comments: [commentSchema],
   logs: [logSchema],
   },
   {timestamps:true}
 );
+
+locationSchema.index({ author: 1, longitude: 1, latitude: 1 }, { unique: true });
 
 const Location = mongoose.model('Location', locationSchema);
 

@@ -8,6 +8,7 @@ const logger = require('morgan');
 const authRouter=require('./controllers/auth');
 const usersRouter=require('./controllers/users');
 const locationsRouter=require('./controllers/locations');
+const listsRouter=require('./controllers/lists');
 
 
 mongoose.connect(process.env.MONGODB_URI);
@@ -23,6 +24,7 @@ app.use(logger('dev'));
 app.use('/auth', authRouter);
 app.use('/users', usersRouter);
 app.use('/locations', locationsRouter);
+app.use('/lists', listsRouter);
 
 // Routes go here
 
