@@ -28,16 +28,12 @@ router.get("/places", async (req, res) => {
     }
 
     const response = await fetch(
-      `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(
-        search
-      )}&filter=countrycode:us&apiKey=${API_KEY}`
+      `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(search)}&filter=countrycode:us&apiKey=${API_KEY}`
     );
 
     if (!response.ok) {
       return res.status(response.status).json({ err: "Geoapify request failed" });
     }
-
-    const response = await fetch(`https://api.geoapify.com/v1/geocode/search?text=${search}&filter=countrycode:us&apiKey=${API_KEY}`);
 
     const data = await response.json();
 
