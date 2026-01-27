@@ -289,27 +289,6 @@ router.put("/:listId/reorder", verifyToken, async (req, res) => {
   }
 });
 
-// CREATE COMMENT
-// router.post("/:listId/comments", verifyToken, async (req, res) => {
-//   try {
-//     console.log (req.body)
-//     req.body.owner = req.user._id;
-
-//     const list = await List.findById(req.params.listId);
-//     console.log(list)
-//     if (!list) return res.status(404).json({ err: "List not found" });
-
-//     list.comments.push(req.body);
-//     await list.save();
-
-//     const newComment = list.comments[list.comments.length - 1];
-//     newComment._doc.owner = req.user;
-
-//   } catch (err) {
-//     res.status(500).json({ err: err.message });
-//   }
-// });
-
 router.post("/:listId/comments", verifyToken, async (req, res) => {
   try {
     const { list, error } = await getOwnedList(req.params.listId, req.user._id);

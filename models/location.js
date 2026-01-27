@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const logSchema = new mongoose.Schema(
+const activitySchema = new mongoose.Schema(
   {
     text: {
       type: String,
@@ -13,7 +13,8 @@ const logSchema = new mongoose.Schema(
     },
     author: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: 'User' }
+      ref: 'User' 
+    }
   },
   { timestamps: true }
 );
@@ -49,8 +50,7 @@ const locationSchema = mongoose.Schema(
     ref: 'User',
     required: true,
   },
-  // comments: [commentSchema],
-  logs: [logSchema],
+  activities: [activitySchema],
   },
   {timestamps:true}
 );
