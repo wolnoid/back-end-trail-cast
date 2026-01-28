@@ -19,6 +19,20 @@ const listLocationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const commentSchema = new mongoose.Schema(
+  {
+    text: {
+      type: String,
+      required: true
+    },
+   owner: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'User' 
+    }
+  },
+  { timestamps: true }
+);
+
 const listSchema = new mongoose.Schema(
   {
     name: { 
@@ -35,12 +49,15 @@ const listSchema = new mongoose.Schema(
       trim: true,
       default: ''
     },
-
     locations: {
       type: [listLocationSchema],
       default: []
     },
-  },
+    comments: {
+      type: [commentSchema],
+      default:[]
+    },
+  }, 
   { timestamps: true }
 );
 
