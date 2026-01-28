@@ -15,6 +15,11 @@ const listLocationSchema = new mongoose.Schema(
       type: Date,
       default: Date.now
     },
+    coordKey: {
+      type: String,
+      default: null,
+      trim: true,
+    },
   },
   { _id: false }
 );
@@ -46,7 +51,16 @@ const listSchema = new mongoose.Schema(
 
 listSchema.index({ owner: 1, name: 1 }, { unique: true });
 
-// prevents duplicates of the same location inside a single list
-listSchema.index({ _id: 1, 'locations.location': 1 }, { unique: true, sparse: true });
+listSchema.index({ name: "text", description: "text" })
+
+listSchema.index(
+  { _id: 1, 'locations.location': 1 },
+  { unique: true, sparse: true }
+);
+
+listSchema.index(
+  { _id: 1, 'locations.coordKey': 1 },
+  { unique: true, sparse: true }
+);
 
 module.exports = mongoose.model('List', listSchema);

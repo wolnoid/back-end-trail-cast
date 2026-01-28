@@ -5,12 +5,33 @@ const Location = require("../models/location.js");
 
 const router = express.Router();
 
-/* Helper: ensure the current user owns the list  */
+/* Helper: ensure the current user owns the list (for write ops) */
 async function getOwnedList(listId, userId) {
   const list = await List.findById(listId);
   if (!list) return { error: { status: 404, msg: "List not found" } };
   if (!list.owner.equals(userId)) return { error: { status: 403, msg: "Forbidden" } };
   return { list };
+}
+
+/* Helper: allow viewing any list (read-only) */
+async function getListById(listId) {
+  const list = await List.findById(listId);
+  if (!list) return { error: { status: 404, msg: "List not found" } };
+  return { list };
+}
+
+/**
+ * Normalize coords into a deterministic key for de-duping within a list.
+ * Uses 1e6 scaling to avoid float/string differences (e.g. "37.77" vs "37.7700").
+ */
+function coordKeyFrom(lon, lat) {
+  const lo = Number(lon);
+  const la = Number(lat);
+  if (!Number.isFinite(lo) || !Number.isFinite(la)) return null;
+
+  const loE6 = Math.round(lo * 1e6);
+  const laE6 = Math.round(la * 1e6);
+  return `${loE6}|${laE6}`;
 }
 
 /* Get all lists for current user */
@@ -49,19 +70,52 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
-/* Get one list + populated location */
+/**
+ * GET /lists/search?q=...
+ * Search lists across ALL users (read-only).
+ * Keep verifyToken so only signed-in users can search.
+ */
+router.get("/search", verifyToken, async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) return res.status(200).json({ lists: [] });
+
+    // Escape regex specials to prevent weird regex behavior
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(escaped, "i");
+
+    const lists = await List.find({
+      $or: [{ name: rx }, { description: rx }],
+    })
+      .select("name description owner updatedAt")
+      .populate("owner", "username")
+      .sort({ updatedAt: -1 })
+      .limit(12)
+      .lean();
+
+    res.status(200).json({ lists });
+  } catch (err) {
+    res.status(500).json({ err: err.message });
+  }
+});
+
+/**
+ * Get one list (viewable by any signed-in user)
+ * Returns populated locations and sorted by order.
+ */
 router.get("/:listId", verifyToken, async (req, res) => {
   try {
-    const { list, error } = await getOwnedList(req.params.listId, req.user._id);
+    const { list, error } = await getListById(req.params.listId);
     if (error) return res.status(error.status).json({ err: error.msg });
 
-    // populate and sort by order
     await list.populate({
       path: "locations.location",
-      populate: { path: "author" }, // optional if you want author in UI
+      select: "name longitude latitude description author",
+      populate: { path: "author", select: "username" },
     });
 
-    // ensure consistent order on response
+    await list.populate({ path: "owner", select: "username" });
+
     const sorted = list.locations
       .slice()
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -75,7 +129,7 @@ router.get("/:listId", verifyToken, async (req, res) => {
   }
 });
 
-/* Update list metadata (name/description) */
+/* Update list metadata (name/description) — owner-only */
 router.put("/:listId", verifyToken, async (req, res) => {
   try {
     const { list, error } = await getOwnedList(req.params.listId, req.user._id);
@@ -95,7 +149,7 @@ router.put("/:listId", verifyToken, async (req, res) => {
   }
 });
 
-/* Delete a list */
+/* Delete a list — owner-only */
 router.delete("/:listId", verifyToken, async (req, res) => {
   try {
     const { list, error } = await getOwnedList(req.params.listId, req.user._id);
@@ -108,14 +162,17 @@ router.delete("/:listId", verifyToken, async (req, res) => {
   }
 });
 
-/* Add a location to a list (create the Location doc if needed)
+/**
+ * Add a location to a list (owner-only)
  *
  * body can be:
- *   - { locationId }  (if location already exists in DB)
+ *   - { locationId }
  * OR
- *   - { name, longitude, latitude, description? } (create new Location doc then add)
+ *   - { name, longitude, latitude, description? }
  *
- * Returns updated list (sorted, populated)
+ * Prevents duplicates by:
+ *   - locationId
+ *   - coordinate key (lon/lat) within the same list
  */
 router.post("/:listId/locations", verifyToken, async (req, res) => {
   try {
@@ -124,7 +181,7 @@ router.post("/:listId/locations", verifyToken, async (req, res) => {
 
     let locationId = req.body.locationId;
 
-    // If client sent raw location data, upsert a Location doc (so it can belong to many lists)
+    // If client sent raw location data, upsert a Location doc (per-user uniqueness)
     if (!locationId) {
       const { name, longitude, latitude, description = "" } = req.body;
 
@@ -132,7 +189,9 @@ router.post("/:listId/locations", verifyToken, async (req, res) => {
       const lat = Number(latitude);
 
       if (!name || !Number.isFinite(lon) || !Number.isFinite(lat)) {
-        return res.status(400).json({ err: "locationId or (name, longitude, latitude) required (numbers)" });
+        return res.status(400).json({
+          err: "locationId or (name, longitude, latitude) required (numbers)",
+        });
       }
 
       const upserted = await Location.findOneAndUpdate(
@@ -148,40 +207,79 @@ router.post("/:listId/locations", verifyToken, async (req, res) => {
         },
         { new: true, upsert: true }
       );
+
       locationId = upserted._id;
     }
 
-    // prevent duplicates in the list
-    const already = list.locations.some((e) => e.location.toString() === locationId.toString());
-    if (already) return res.status(409).json({ err: "Location already in this list" });
+    // Duplicate check by locationId
+    const alreadyById = list.locations.some(
+      (e) => e.location.toString() === locationId.toString()
+    );
+    if (alreadyById) return res.status(409).json({ err: "Location already in this list" });
+
+    // Duplicate check by coordinates (handles different Location docs with same lon/lat)
+    // Get lon/lat for the candidate:
+    let lon;
+    let lat;
+
+    if (req.body.locationId) {
+      const locDoc = await Location.findById(locationId).select("longitude latitude");
+      if (!locDoc) return res.status(404).json({ err: "Location not found" });
+      lon = locDoc.longitude;
+      lat = locDoc.latitude;
+    } else {
+      lon = Number(req.body.longitude);
+      lat = Number(req.body.latitude);
+    }
+
+    const coordKey = coordKeyFrom(lon, lat);
+    if (!coordKey) return res.status(400).json({ err: "Invalid coordinates" });
+
+    // Populate minimal coords to compare against existing entries (back-compat if coordKey missing)
+    await list.populate({ path: "locations.location", select: "longitude latitude" });
+
+    const alreadyByCoords = list.locations.some((entry) => {
+      if (entry.coordKey) return entry.coordKey === coordKey;
+      const l = entry.location;
+      if (!l) return false;
+      return coordKeyFrom(l.longitude, l.latitude) === coordKey;
+    });
+
+    if (alreadyByCoords) {
+      return res.status(409).json({ err: "A location with those coordinates is already in this list" });
+    }
 
     // set order = max + 1
     const maxOrder = list.locations.reduce((m, e) => Math.max(m, e.order ?? 0), -1);
+
     list.locations.push({
       location: locationId,
       order: maxOrder + 1,
       addedAt: new Date(),
+      coordKey, // requires coordKey field in your list schema to persist
     });
 
     await list.save();
 
     await list.populate({
       path: "locations.location",
-      populate: { path: "author" },
+      select: "name longitude latitude description author",
+      populate: { path: "author", select: "username" },
     });
+
     const sorted = list.locations.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     res.status(201).json({ ...list.toObject(), locations: sorted });
   } catch (err) {
-    // Handles race-condition duplicates from the unique index on (_id, locations.location)
+    // Handles race-condition duplicates from unique indexes (if you add them)
     if (err.code === 11000) {
-      return res.status(409).json({ err: "Location already in this list" });
+      return res.status(409).json({ err: "Location (or coordinates) already in this list" });
     }
     res.status(500).json({ err: err.message });
   }
 });
 
-/* Remove a location from a list */
+/* Remove a location from a list — owner-only */
 router.delete("/:listId/locations/:locationId", verifyToken, async (req, res) => {
   try {
     const { list, error } = await getOwnedList(req.params.listId, req.user._id);
@@ -200,7 +298,12 @@ router.delete("/:listId/locations/:locationId", verifyToken, async (req, res) =>
 
     await list.save();
 
-    await list.populate("locations.location");
+    await list.populate({
+      path: "locations.location",
+      select: "name longitude latitude description author",
+      populate: { path: "author", select: "username" },
+    });
+
     const sorted = list.locations.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     res.status(200).json({ ...list.toObject(), locations: sorted });
@@ -209,7 +312,7 @@ router.delete("/:listId/locations/:locationId", verifyToken, async (req, res) =>
   }
 });
 
-/* Drag/drop reorder */
+/* Drag/drop reorder — owner-only */
 router.put("/:listId/reorder", verifyToken, async (req, res) => {
   try {
     const { list, error } = await getOwnedList(req.params.listId, req.user._id);
@@ -244,7 +347,12 @@ router.put("/:listId/reorder", verifyToken, async (req, res) => {
 
     await list.save();
 
-    await list.populate("locations.location");
+    await list.populate({
+      path: "locations.location",
+      select: "name longitude latitude description author",
+      populate: { path: "author", select: "username" },
+    });
+
     const sorted = list.locations.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     res.status(200).json({ ...list.toObject(), locations: sorted });
