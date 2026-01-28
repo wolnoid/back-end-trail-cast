@@ -243,20 +243,6 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
-// SHOW LOCATION
-router.get("/:locationId", async (req, res) => {
-  try {
-    const location = await Location.findById(req.params.locationId).populate([
-      "author",
-      "comments.author",
-      "logs.author",
-    ]);
-
-    res.status(200).json(location);
-  } catch (err) {
-    res.status(500).json({ err: err.message });
-  }
-});
 
 // UPDATE LOCATION
 router.put("/:locationId", verifyToken, async (req, res) => {
@@ -297,31 +283,23 @@ router.delete("/:locationId", verifyToken, async (req, res) => {
   }
 });
 
-// CREATE COMMENT
-router.post("/:locationId/comments", verifyToken, async (req, res) => {
-  try {
-    req.body.author = req.user._id;
+//matching by coord -location
 
-    const location = await Location.findById(req.params.locationId);
-    if (!location) return res.status(404).json({ err: "Location not found" });
+router.get('/by-coords', async (req, res) => {
+  const { lat, lon } = req.query;
 
-    location.comments.push(req.body);
-    await location.save();
+  console.log(lat,lon);
+  
 
-    const newComment = location.comments[location.comments.length - 1];
-    newComment._doc.author = req.user;
-
-    res.status(201).json(newComment);
-  } catch (err) {
-    res.status(500).json({ err: err.message });
+  if (!lat || !lon) {
+    return res.status(400).json({ error: 'Latitude and longitude are required' });
   }
-});
 
-// UPDATE COMMENT
-router.put("/:locationId/comments/:commentId", verifyToken, async (req, res) => {
   try {
-    const location = await Location.findById(req.params.locationId);
-    if (!location) return res.status(404).json({ err: "Location not found" });
+    const location = await Location.findOne({
+      latitude: Number(lat),
+      longitude: Number(lon),
+    }).populate('activities.author', 'username'); 
 
     const comment = location.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ err: "Comment not found" });
@@ -332,25 +310,85 @@ router.put("/:locationId/comments/:commentId", verifyToken, async (req, res) => 
       });
     }
 
-    comment.text = req.body.text;
+    res.status(200).json(location);
+  } catch (err) {
+    console.error('Error fetching location by coords:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+//activities
+router.post("/:locationId/activities", verifyToken, async (req, res) => {
+  try {
+    const location = await Location.findById(req.params.locationId);
+    if (!location) return res.status(404).json({ err: "Location not found" });
+   
+    const activityData = { ...req.body, author: req.user._id };
+    location.activities.push(activityData);
     await location.save();
 
-    res.status(200).json(comment);
+    await location.populate({
+      path: 'activities.author',
+      select: 'username'
+    });
+
+    const newActivity = location.activities[location.activities.length - 1];
+    res.status(201).json(newActivity);
+
   } catch (err) {
     res.status(500).json({ err: err.message });
   }
 });
 
-// DELETE COMMENT
-router.delete("/:locationId/comments/:commentId", verifyToken, async (req, res) => {
+//update activity
+router.put("/:locationId/activities/:activityId", verifyToken, async (req, res) => {
+  try {
+    const location = await Location.findById(req.params.locationId);
+    if (!location) {
+      return res.status(404).json({ err: "Location not found" });
+    }
+
+    const activity = location.activities.id(req.params.activityId);
+    if (!activity) {
+      return res.status(404).json({ err: "Activity not found" });
+    }
+
+    if (!activity.author || activity.author.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    activity.text = req.body.text;
+    activity.day = req.body.day;
+
+    await location.save();
+
+    const populatedLocation = await location.populate({
+      path: 'activities.author',
+      select: 'username'
+    });
+
+    const updatedActivity = populatedLocation.activities.id(activity._id);
+
+    res.status(200).json(updatedActivity);
+
+  } catch (err) {
+    console.error("Update activity error:", err);
+    res.status(500).json({ err: err.message });
+  }
+});
+
+
+// delete activity
+router.delete("/:locationId/activities/:activityId", verifyToken, async (req, res) => {
   try {
     const location = await Location.findById(req.params.locationId);
     if (!location) return res.status(404).json({ err: "Location not found" });
 
-    const comment = location.comments.id(req.params.commentId);
-    if (!comment) return res.status(404).json({ err: "Comment not found" });
+    const activity = location.activities.id(req.params.activityId);
+    if (!activity) return res.status(404).json({ err: "Comment not found" });
 
-    if (!comment.author.equals(req.user._id)) {
+    if (!activity.author.equals(req.user._id)) {
       return res.status(403).json({ message: "You are not authorized to delete this comment" });
     }
 
@@ -425,8 +463,11 @@ router.delete("/:locationId/logs/:logId", verifyToken, async (req, res) => {
 
     res.status(200).json({ message: "Activity deleted successfully" });
   } catch (err) {
+    console.error("Update activity error:", err);
     res.status(500).json({ err: err.message });
   }
 });
+
+
 
 module.exports = router;
