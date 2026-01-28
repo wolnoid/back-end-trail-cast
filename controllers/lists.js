@@ -68,10 +68,16 @@ router.get("/:listId", verifyToken, async (req, res) => {
     if (error) return res.status(error.status).json({ err: error.msg });
 
     // populate and sort by order
-    await list.populate({
-      path: "locations.location",
-      populate: { path: "author" }, // optional if you want author in UI
-    });
+    await list.populate([
+      {
+        path: "locations.location",
+        populate: { path: "author" }, // optional
+      },
+      {
+        path: "comments.owner",
+        select: "username", // only fetch username for frontend
+      },
+    ]);
 
     // ensure consistent order on response
     const sorted = list.locations
@@ -282,5 +288,87 @@ router.put("/:listId/reorder", verifyToken, async (req, res) => {
     res.status(500).json({ err: err.message });
   }
 });
+
+router.post("/:listId/comments", verifyToken, async (req, res) => {
+  try {
+    const { list, error } = await getOwnedList(req.params.listId, req.user._id);
+    if (error) return res.status(error.status).json({ err: error.msg });
+
+    // Save owner in the comment
+    const commentData = { ...req.body, owner: req.user._id };
+    list.comments.push(commentData);
+    await list.save();
+
+    const newComment = list.comments[list.comments.length - 1];
+
+    await newComment.populate('owner', 'username');
+
+    res.status(201).json(newComment);
+  } catch (err) {
+    res.status(500).json({ err: err.message });
+  }
+});
+
+// UPDATE COMMENT
+router.put("/:listId/comments/:commentId", verifyToken, async (req, res) => {
+  try {
+    const { list, error } = await getOwnedList(req.params.listId, req.user._id);
+    if (error) return res.status(error.status).json({ err: error.msg });
+
+    const comment = list.comments.id(req.params.commentId);
+      if (!comment) return res.status(404).json({ err: "Comment not found" });
+
+      if (!comment.owner || comment.owner.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      if (!req.body.text || typeof req.body.text !== 'string') {
+        return res.status(400).json({ err: "Text is required" });
+      }
+
+    comment.text = req.body.text;
+    console.log (comment);
+    
+    await list.save();
+    const populatedList = await list.populate({
+      path: 'comments.owner',
+      select: 'username'
+    });
+
+    const updatedComment = populatedList.comments.id(comment._id);
+    res.status(200).json(updatedComment);
+
+  } catch (err) {
+    console.error("Update comment error:", err);
+    res.status(500).json({ err: err.message });
+  }
+});
+
+// DELETE COMMENT
+router.delete("/:listId/comments/:commentId", verifyToken, async (req, res) => {
+  try {
+    const { list, error } = await getOwnedList(req.params.listId, req.user._id);
+    if (error) return res.status(error.status).json({ err: error.msg });
+
+    const comment = list.comments.id(req.params.commentId);
+    if (!comment) {
+      return res.status(404).json({ err: "Comment not found" });
+    }
+
+    if (!comment.owner.equals(req.user._id)) {
+      return res.status(403).json({
+        message: "You are not authorized to delete this comment",
+      });
+    }
+
+    list.comments.pull(req.params.commentId);
+    await list.save();
+
+    res.status(200).json({ message: "Comment deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ err: err.message });
+  }
+});
+
 
 module.exports = router;
